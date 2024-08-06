@@ -14,6 +14,11 @@ from prometheus_eval.mock import MockLLM
 from prometheus_eval.vllm import VLLM
 from transformers import AutoTokenizer
 
+# watermarking
+from prometheus_eval.watermark.auto_watermark import AutoWatermark
+from prometheus_eval.watermark.utils import ModelConfig
+
+
 
 def apply_template_hf(tokenizer, record):
     if tokenizer.chat_template is not None and "system" in tokenizer.chat_template:
@@ -47,6 +52,46 @@ def main(args):
     dataset: pd.DataFrame = load_dataset(
         "prometheus-eval/BiGGen-Bench", split="test"
     ).to_pandas()
+    
+    # watermarking scheme stuff
+    watermarking_scheme = args.watermarking_scheme
+
+    def load_config_file(path: str) -> dict:
+        """Load a JSON configuration file from the specified path and return it as a dictionary."""
+        try:
+            with open(path, 'r') as f:
+                config_dict = json.load(f)
+            return config_dict
+
+        except FileNotFoundError:
+            print(f"Error: The file '{path}' does not exist.")
+            return None
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON in '{path}': {e}")
+            # Handle other potential JSON decoding errors here
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            # Handle other unexpected errors here
+            return None
+
+    # watermarking scheme stuff
+    print(f"Watermarking scheme: {watermarking_scheme}")
+    if watermarking_scheme != "no_watermark":
+        algorithm_config_file = f"lm_eval/watermark/watermark_config/{watermarking_scheme}.json"
+        config_dict = load_config_file(algorithm_config_file)
+        watermarking_scheme_name = config_dict["algorithm_name"]
+        print(f"watermarking_scheme_name: {watermarking_scheme_name}")
+        algorithm_config = config_dict
+        
+        model_config = ModelConfig(tokenizer)
+        
+        watermarking_scheme = AutoWatermark.load(watermarking_scheme_name,
+                algorithm_config=algorithm_config,
+                gen_model=None,
+                model_config=model_config)
+    else:
+        watermarking_scheme = None
 
     # records: Full data that has all the information of BiGGen-Bench
     # inputs: Inputs that will be fed to the model
@@ -65,6 +110,7 @@ def main(args):
         "temperature": 1.0,
         "top_p": 0.9,
         "use_tqdm": True,
+        "logits_processor": watermarking_scheme.logits_processor if watermarking_scheme is not None else None,
     }
 
     # TODO: Support changing and setting the model parameters from the command line
@@ -109,6 +155,14 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="Path to save the output file",
+    )
+    
+    parser.add_argument(
+        "--watermarking_scheme",
+        type=str,
+        required=False,
+        default="no_watermark",
+        help="Watermarking scheme to use",
     )
 
     hf_token = dotenv_values(".env").get("HF_TOKEN", None)

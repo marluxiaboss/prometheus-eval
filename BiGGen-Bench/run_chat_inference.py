@@ -15,8 +15,8 @@ from prometheus_eval.vllm import VLLM
 from transformers import AutoTokenizer
 
 # watermarking
-from prometheus_eval.watermark.auto_watermark import AutoWatermark
-from prometheus_eval.watermark.utils import ModelConfig
+from .watermark.auto_watermark import AutoWatermark
+from .watermark.utils import ModelConfig
 
 
 

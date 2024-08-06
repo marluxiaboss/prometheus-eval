@@ -42,7 +42,7 @@ class AutoWatermark:
         module_name, class_name = watermark_name.rsplit('.', 1)
 
         # TODO: figure out if we should just keep watermark as an external library
-        module_name = "lm_eval." + module_name
+        module_name = module_name
         
         module = importlib.import_module(module_name)
         watermark_class = getattr(module, class_name)

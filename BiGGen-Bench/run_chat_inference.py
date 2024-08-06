@@ -12,11 +12,14 @@ from dotenv import dotenv_values
 # Run `source init.sh` to use local prometheus_eval
 from prometheus_eval.mock import MockLLM
 from prometheus_eval.vllm import VLLM
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+from tqdm import tqdm
 
 # watermarking
-from .watermark.auto_watermark import AutoWatermark
-from .watermark.utils import ModelConfig
+from watermark.auto_watermark import AutoWatermark
+from watermark.utils import ModelConfig
 
 
 
@@ -75,21 +78,54 @@ def main(args):
             # Handle other unexpected errors here
             return None
 
+    gen_params = {
+        "max_tokens": 2048,
+        "repetition_penalty": 1.03,
+        "best_of": 1,
+        "temperature": 1.0,
+        "top_p": 0.9,
+        "use_tqdm": True,
+        #"logits_processors": [watermarking_scheme.logits_processor] if watermarking_scheme is not None else None,
+    }
+    
+    watermark_gen_params = { 
+        "max_new_tokens": 2048 ,
+        "repetition_penalty": 1.03,
+        "temperature": 1.0,
+        "top_p": 0.9
+    }
+
     # watermarking scheme stuff
     print(f"Watermarking scheme: {watermarking_scheme}")
     if watermarking_scheme != "no_watermark":
-        algorithm_config_file = f"lm_eval/watermark/watermark_config/{watermarking_scheme}.json"
+        algorithm_config_file = f"watermark/watermark_config/{watermarking_scheme}.json"
         config_dict = load_config_file(algorithm_config_file)
         watermarking_scheme_name = config_dict["algorithm_name"]
         print(f"watermarking_scheme_name: {watermarking_scheme_name}")
         algorithm_config = config_dict
         
-        model_config = ModelConfig(tokenizer)
+        device = "cuda"
+        gen_path = model_name
+        gen_tokenizer = AutoTokenizer.from_pretrained(gen_path, trust_remote_code=True)
+        gen_tokenizer.pad_token = gen_tokenizer.eos_token
+
+
+        #gen = AutoModelForCausalLM.from_pretrained(gen_path,
+        #    torch_dtype=torch.bfloat16).to(device)
+
+        # config for chat template and gen parameters
+        use_chat_template = True
+        chat_template_type = "system_user"
+        gen_config = ModelConfig(gen_tokenizer,
+            use_chat_template=use_chat_template, chat_template_type=chat_template_type,
+            gen_params=watermark_gen_params, model_name=model_name, device=device)
+        
         
         watermarking_scheme = AutoWatermark.load(watermarking_scheme_name,
                 algorithm_config=algorithm_config,
+                #gen_model=gen,
                 gen_model=None,
-                model_config=model_config)
+                model_config=gen_config)
     else:
         watermarking_scheme = None
 
@@ -103,25 +139,36 @@ def main(args):
         records.append(record.to_dict())
         inputs.append(apply_template_hf(tokenizer, record))
 
-    params = {
+
+    gen_params = {
         "max_tokens": 2048,
         "repetition_penalty": 1.03,
         "best_of": 1,
         "temperature": 1.0,
         "top_p": 0.9,
         "use_tqdm": True,
-        "logits_processor": watermarking_scheme.logits_processor if watermarking_scheme is not None else None,
+        "logits_processors": [watermarking_scheme.vllm_logits_processor] if watermarking_scheme is not None else None,
     }
 
     # TODO: Support changing and setting the model parameters from the command line
-    if model_name.endswith("AWQ"):
-        model = VLLM(model_name, tensor_parallel_size=1, quantization="AWQ")
-    elif model_name.endswith("GPTQ"):
-        model = VLLM(model_name, tensor_parallel_size=1, quantization="GPTQ")
-    else:
-        model = VLLM(model_name, tensor_parallel_size=1)
+    if watermarking_scheme is None:
+        if model_name.endswith("AWQ"):
+            model = VLLM(model_name, tensor_parallel_size=1, quantization="AWQ")
+        elif model_name.endswith("GPTQ"):
+            model = VLLM(model_name, tensor_parallel_size=1, quantization="GPTQ")
+        else:
+            model = VLLM(model_name, tensor_parallel_size=1)
 
-    outputs = model.completions(inputs, **params)
+    outputs = model.completions(inputs, **gen_params)
+      
+    #if watermarking_scheme is not None:
+    #    batch_size = 16
+    #    outputs = []  
+    #    for i in tqdm(range(0, len(inputs), batch_size), desc="Generating text"):
+    #        batch_inputs = inputs[i:i+batch_size]
+    #        batch_outputs = watermarking_scheme.generate(batch_inputs)
+    #        outputs.extend(batch_outputs)
+    
 
     if len(outputs) != 765:
         warnings.warn(f"Expected 765 outputs, got {len(outputs)}")

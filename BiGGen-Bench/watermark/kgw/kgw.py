@@ -143,7 +143,53 @@ class KGWLogitsProcessor(LogitsProcessor):
         green_tokens_mask = self._calc_greenlist_mask(scores=scores, greenlist_token_ids=batched_greenlist_ids)
 
         scores = self._bias_greenlist_logits(scores=scores, greenlist_mask=green_tokens_mask, greenlist_bias=self.config.delta)
+        return scores
+    
+class KGW_VLLMLogitsProcessor:
+    """LogitsProcessor for KGW algorithm, process logits to add watermark.
+    Version supporting VLLM logits processor."""
 
+    def __init__(self, config: KGWConfig, utils: KGWUtils, *args, **kwargs) -> None:
+        """
+            Initialize the KGW logits processor.
+
+            Parameters:
+                config (KGWConfig): Configuration for the KGW algorithm.
+                utils (KGWUtils): Utility class for the KGW algorithm.
+        """
+        self.config = config
+        self.utils = utils
+
+    def _calc_greenlist_mask(self, scores: torch.FloatTensor, greenlist_token_ids: torch.LongTensor) -> torch.BoolTensor:
+        """Calculate greenlist mask for the given scores and greenlist token ids."""
+        green_tokens_mask = torch.zeros_like(scores)
+        for b_idx in range(len(greenlist_token_ids)):
+            green_tokens_mask[b_idx][greenlist_token_ids[b_idx]] = 1
+        final_mask = green_tokens_mask.bool()
+        return final_mask
+
+    def _bias_greenlist_logits(self, scores: torch.Tensor, greenlist_mask: torch.Tensor, greenlist_bias: float) -> torch.Tensor:
+        """Bias the scores for the greenlist tokens."""
+        scores[greenlist_mask] = scores[greenlist_mask] + greenlist_bias
+        return scores
+
+    def __call__(self, previous_tokens: list, scores: torch.FloatTensor) -> torch.FloatTensor:
+        """Process logits to add watermark."""
+        if len(previous_tokens) < self.config.prefix_length:
+            return scores
+
+        batch_size = 1
+        batched_greenlist_ids = [None for _ in range(batch_size)]
+
+        for b_idx in range(batch_size):
+            previous_tokens = torch.tensor(previous_tokens, device=self.config.device)
+            greenlist_ids = self.utils.get_greenlist_ids(previous_tokens)
+            batched_greenlist_ids[b_idx] = greenlist_ids
+
+        scores = scores.reshape(batch_size, -1, self.config.vocab_size)
+        green_tokens_mask = self._calc_greenlist_mask(scores=scores, greenlist_token_ids=batched_greenlist_ids)
+
+        scores = self._bias_greenlist_logits(scores=scores, greenlist_mask=green_tokens_mask, greenlist_bias=self.config.delta)
         return scores
     
 
@@ -161,6 +207,7 @@ class KGW(BaseWatermark):
         self.config = KGWConfig(algorithm_config, gen_model, transformers_config)
         self.utils = KGWUtils(self.config)
         self.logits_processor = KGWLogitsProcessor(self.config, self.utils)
+        self.vllm_logits_processor = KGW_VLLMLogitsProcessor(self.config, self.utils)
     
     def generate_watermarked_text(self, prompt: str, *args, **kwargs) -> str:
         """Generate watermarked text."""
@@ -181,7 +228,7 @@ class KGW(BaseWatermark):
         return watermarked_text
     
     
-    def generate_watermarked_text_modified_old(self, prompts: list[str], *args, **kwargs) -> str:
+    def generate(self, prompts: list[str], *args, **kwargs) -> str:
         """Generate watermarked text."""
 
         # Configure generate_with_watermark

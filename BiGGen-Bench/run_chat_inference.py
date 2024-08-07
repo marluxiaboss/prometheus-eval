@@ -171,6 +171,10 @@ def main(args):
         result[uid] = record.copy()
         result[uid]["response"] = output.strip()
         result[uid]["response_model_name"] = model_name
+        if watermarking_scheme is not None:
+            result[uid]["watermarking_scheme"] = watermarking_scheme_name
+        else:
+            result[uid]["watermarking_scheme"] = "no_watermark"
 
     output_file_path = Path(output_file_path)
     output_file_path.parent.mkdir(parents=True, exist_ok=True)

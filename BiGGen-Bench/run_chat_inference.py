@@ -84,8 +84,7 @@ def main(args):
         "best_of": 1,
         "temperature": 1.0,
         "top_p": 0.9,
-        "use_tqdm": True,
-        #"logits_processors": [watermarking_scheme.logits_processor] if watermarking_scheme is not None else None,
+        "use_tqdm": True
     }
     
     watermark_gen_params = { 
@@ -110,8 +109,8 @@ def main(args):
         gen_tokenizer.pad_token = gen_tokenizer.eos_token
 
 
-        #gen = AutoModelForCausalLM.from_pretrained(gen_path,
-        #    torch_dtype=torch.bfloat16).to(device)
+        gen = AutoModelForCausalLM.from_pretrained(gen_path,
+            torch_dtype=torch.bfloat16).to(device)
 
         # config for chat template and gen parameters
         use_chat_template = True
@@ -123,8 +122,7 @@ def main(args):
         
         watermarking_scheme = AutoWatermark.load(watermarking_scheme_name,
                 algorithm_config=algorithm_config,
-                #gen_model=gen,
-                gen_model=None,
+                gen_model=gen,
                 model_config=gen_config)
     else:
         watermarking_scheme = None
@@ -138,36 +136,28 @@ def main(args):
         record = row[1]
         records.append(record.to_dict())
         inputs.append(apply_template_hf(tokenizer, record))
-
-
-    gen_params = {
-        "max_tokens": 2048,
-        "repetition_penalty": 1.03,
-        "best_of": 1,
-        "temperature": 1.0,
-        "top_p": 0.9,
-        "use_tqdm": True,
-        "logits_processors": [watermarking_scheme.vllm_logits_processor] if watermarking_scheme is not None else None,
-    }
+        
+        
+    # Generate completions
 
     # TODO: Support changing and setting the model parameters from the command line
-    #if watermarking_scheme is None:
-    if model_name.endswith("AWQ"):
-        model = VLLM(model_name, tensor_parallel_size=1, quantization="AWQ")
-    elif model_name.endswith("GPTQ"):
-        model = VLLM(model_name, tensor_parallel_size=1, quantization="GPTQ")
-    else:
-        model = VLLM(model_name, tensor_parallel_size=1)
+    if watermarking_scheme is None:
+        if model_name.endswith("AWQ"):
+            model = VLLM(model_name, tensor_parallel_size=1, quantization="AWQ")
+        elif model_name.endswith("GPTQ"):
+            model = VLLM(model_name, tensor_parallel_size=1, quantization="GPTQ")
+        else:
+            model = VLLM(model_name, tensor_parallel_size=1)
 
-    outputs = model.completions(inputs, **gen_params)
+            outputs = model.completions(inputs, **gen_params)
       
-    #if watermarking_scheme is not None:
-    #    batch_size = 16
-    #    outputs = []  
-    #    for i in tqdm(range(0, len(inputs), batch_size), desc="Generating text"):
-    #        batch_inputs = inputs[i:i+batch_size]
-    #        batch_outputs = watermarking_scheme.generate(batch_inputs)
-    #        outputs.extend(batch_outputs)
+    else:
+        batch_size = args.batch_size
+        outputs = []  
+        for i in tqdm(range(0, len(inputs), batch_size), desc="Generating text"):
+            batch_inputs = inputs[i:i+batch_size]
+            batch_outputs = watermarking_scheme.generate(batch_inputs)
+            outputs.extend(batch_outputs)
     
 
     if len(outputs) != 765:
@@ -210,6 +200,14 @@ if __name__ == "__main__":
         required=False,
         default="no_watermark",
         help="Watermarking scheme to use",
+    )
+    
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        required=False,
+        default=1,
+        help="Batch size to use for generation",
     )
 
     hf_token = dotenv_values(".env").get("HF_TOKEN", None)

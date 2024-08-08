@@ -156,9 +156,16 @@ def main(args):
         outputs = []  
         for i in tqdm(range(0, len(inputs), batch_size), desc="Generating text"):
             batch_inputs = inputs[i:i+batch_size]
+            
+            # tokenize
+            batch_inputs = tokenizer(batch_inputs, return_tensors="pt",
+                      add_special_tokens=True, padding=True, truncation=True).to(device)
             batch_outputs = watermarking_scheme.generate(batch_inputs)
+            
+            # decode
+            batch_outputs = tokenizer.batch_decode(batch_outputs, skip_special_tokens=True)
+            
             outputs.extend(batch_outputs)
-    
 
     if len(outputs) != 765:
         warnings.warn(f"Expected 765 outputs, got {len(outputs)}")

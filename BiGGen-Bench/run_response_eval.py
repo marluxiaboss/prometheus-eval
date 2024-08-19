@@ -77,7 +77,9 @@ def main(args):
     assert isinstance(input_data, dict), "Wrong input file data format"
     assert isinstance(input_data_list, list), "Wrong input file data format"
     assert isinstance(input_data_list[0], dict), "Wrong input file data format"
-    assert len(input_data_list[0].keys()) == 10, "Wrong input file data format"
+    
+    # 11 because of watermarking
+    assert len(input_data_list[0].keys()) == 11, "Wrong input file data format"
 
     records, instructions, responses, reference_answers, rubric = init_eval()
     records_2, instructions_2, responses_2, reference_answers_2, rubric_2 = init_eval()

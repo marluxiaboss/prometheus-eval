@@ -19,9 +19,7 @@ from tqdm import tqdm
 
 # watermarking
 from watermark.auto_watermark import AutoWatermark
-from watermark.utils import ModelConfig
-
-
+from watermark.utils import ModelConfig, load_config_file
 
 def apply_template_hf(tokenizer, record):
     if tokenizer.chat_template is not None and "system" in tokenizer.chat_template:
@@ -59,25 +57,6 @@ def main(args):
     # watermarking scheme stuff
     watermarking_scheme = args.watermarking_scheme
 
-    def load_config_file(path: str) -> dict:
-        """Load a JSON configuration file from the specified path and return it as a dictionary."""
-        try:
-            with open(path, 'r') as f:
-                config_dict = json.load(f)
-            return config_dict
-
-        except FileNotFoundError:
-            print(f"Error: The file '{path}' does not exist.")
-            return None
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON in '{path}': {e}")
-            # Handle other potential JSON decoding errors here
-            return None
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-            # Handle other unexpected errors here
-            return None
-
     gen_params = {
         "max_tokens": 2048,
         "repetition_penalty": 1.03,
@@ -112,7 +91,7 @@ def main(args):
         gen = AutoModelForCausalLM.from_pretrained(gen_path,
             torch_dtype=torch.bfloat16).to(device)
 
-        # config for chat template and gen parameters
+        # config for chat template and gn parameters
         use_chat_template = True
         chat_template_type = "system_user"
         gen_config = ModelConfig(gen_tokenizer,

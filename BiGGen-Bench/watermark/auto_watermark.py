@@ -16,6 +16,7 @@ WATERMARK_MAPPING_NAMES={
     "DIP": "watermark.dip.DIP",
     "KGW_E": "watermark.kgw_e.KGW_E",
     "SWEET_P": "watermark.sweet_p.SWEET_P",
+    "SWEET": "watermark.sweet.SWEET",
 }
 
 def watermark_name_from_alg_name(name):
